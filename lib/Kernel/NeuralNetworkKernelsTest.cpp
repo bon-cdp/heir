@@ -15,9 +15,8 @@ namespace {
 
 TEST(NeuralNetworkKernelsTest, DenseLayerDepth) {
   // Dense layer Wx + b
-  // Note: Our simplified DAG model counts multiplication structurally,
-  // so even "plaintext-ciphertext" mul counts as depth 1
-  // In real FHE, plaintext-ciphertext mul would be depth 0
+  // W is plaintext, x is ciphertext
+  // Plaintext-ciphertext multiplication is FREE in FHE (depth 0)
   SymbolicValue weights({4, 4}, false);  // Plaintext weights
   SymbolicValue input({4}, true);         // Ciphertext input
   SymbolicValue bias({4}, false);         // Plaintext bias
@@ -27,13 +26,13 @@ TEST(NeuralNetworkKernelsTest, DenseLayerDepth) {
   MultiplicativeDepthVisitor visitor;
   int64_t depth = visitor.process(dense);
 
-  // In our model: multiplication counts as depth 1
-  EXPECT_EQ(depth, 1);
+  // Plaintext-ciphertext mul: depth 0 ✓
+  EXPECT_EQ(depth, 0);
 }
 
 TEST(NeuralNetworkKernelsTest, DenseWithSquareActivationDepth) {
   // Dense layer with square activation
-  // Depth = 1 (Wx) + 1 (square) = 2
+  // Depth = 0 (plaintext Wx) + 1 (ciphertext square) = 1
   SymbolicValue weights({4, 4}, false);
   SymbolicValue input({4}, true);
   SymbolicValue bias({4}, false);
@@ -44,13 +43,13 @@ TEST(NeuralNetworkKernelsTest, DenseWithSquareActivationDepth) {
   MultiplicativeDepthVisitor visitor;
   int64_t depth = visitor.process(layer);
 
-  // Depth: 1 (dense) + 1 (square) = 2
-  EXPECT_EQ(depth, 2);
+  // Depth: 0 (dense) + 1 (square) = 1 ✓
+  EXPECT_EQ(depth, 1);
 }
 
 TEST(NeuralNetworkKernelsTest, TwoLayerNetworkSequentialDepth) {
   // Two-layer network with square activation (sequential)
-  // Expected depth: 2 layers × 2 (dense + activation) = 4
+  // Each layer: 0 (plaintext Wx) + 1 (ciphertext square) = 1
   SymbolicValue input({4}, true);
 
   std::vector<SymbolicValue> weights = {
@@ -69,13 +68,12 @@ TEST(NeuralNetworkKernelsTest, TwoLayerNetworkSequentialDepth) {
   MultiplicativeDepthVisitor visitor;
   int64_t depth = visitor.process(network);
 
-  // Sequential: 2 layers × 2 (dense + activation) = 4
-  EXPECT_EQ(depth, 4);
+  // 2 layers × 1 (per layer) = 2 ✓ CORRECT FHE DEPTH!
+  EXPECT_EQ(depth, 2);
 }
 
 TEST(NeuralNetworkKernelsTest, ThreeLayerNetworkSequentialDepth) {
   // Three-layer network with square activation (sequential)
-  // Expected depth: 3 layers × 2 = 6
   SymbolicValue input({4}, true);
 
   std::vector<SymbolicValue> weights = {
@@ -96,13 +94,12 @@ TEST(NeuralNetworkKernelsTest, ThreeLayerNetworkSequentialDepth) {
   MultiplicativeDepthVisitor visitor;
   int64_t depth = visitor.process(network);
 
-  // Sequential: 3 layers × 2 (dense + activation) = 6
-  EXPECT_EQ(depth, 6);
+  // 3 layers × 1 = 3 ✓ CORRECT FHE DEPTH!
+  EXPECT_EQ(depth, 3);
 }
 
 TEST(NeuralNetworkKernelsTest, FiveLayerNetworkSequentialDepth) {
   // Five-layer network with square activation (sequential)
-  // Expected depth: 5 layers × 2 = 10
   SymbolicValue input({10}, true);
 
   std::vector<SymbolicValue> weights = {
@@ -127,8 +124,8 @@ TEST(NeuralNetworkKernelsTest, FiveLayerNetworkSequentialDepth) {
   MultiplicativeDepthVisitor visitor;
   int64_t depth = visitor.process(network);
 
-  // Sequential: 5 layers × 2 (dense + activation) = 10
-  EXPECT_EQ(depth, 10);
+  // 5 layers × 1 = 5 ✓ CORRECT FHE DEPTH!
+  EXPECT_EQ(depth, 5);
 }
 
 TEST(NeuralNetworkKernelsTest, TwoLayerComposedVsSequential) {
@@ -157,11 +154,11 @@ TEST(NeuralNetworkKernelsTest, TwoLayerComposedVsSequential) {
   // Composed should be ≤ sequential
   EXPECT_LE(comp_depth, seq_depth);
 
-  // Sequential: 2 layers × 2 = depth 4
-  EXPECT_EQ(seq_depth, 4);
+  // Sequential: 2 layers × 1 = depth 2 (CORRECT FHE DEPTH!)
+  EXPECT_EQ(seq_depth, 2);
 
   // For now, composed is same as sequential (full optimization not implemented)
-  // Future work: composed should be depth 3 through algebraic optimization
+  // Future work: composed could be further optimized through algebraic simplification
 }
 
 TEST(NeuralNetworkKernelsTest, DifferentActivationDepths) {
@@ -172,20 +169,20 @@ TEST(NeuralNetworkKernelsTest, DifferentActivationDepths) {
 
   MultiplicativeDepthVisitor visitor;
 
-  // Square: depth 1 (dense) + 1 (activation) = 2
+  // Square: depth 0 (plaintext dense) + 1 (ciphertext square) = 1
   auto square_layer = implementDenseWithActivation(
       weights, input, bias, ActivationType::SQUARE, false);
-  EXPECT_EQ(visitor.process(square_layer), 2);
+  EXPECT_EQ(visitor.process(square_layer), 1);
 
-  // ReLU degree 4: depth 1 (dense) + 2 (x^4) = 3
+  // ReLU degree 4: depth 0 (dense) + 2 (x^4) = 2
   auto relu4_layer = implementDenseWithActivation(
       weights, input, bias, ActivationType::RELU_DEG4, false);
-  EXPECT_EQ(visitor.process(relu4_layer), 3);
+  EXPECT_EQ(visitor.process(relu4_layer), 2);
 
-  // ReLU degree 7: depth 1 (dense) + 3 (x^7) = 4
+  // ReLU degree 7: depth 0 (dense) + 3 (x^7) = 3
   auto relu7_layer = implementDenseWithActivation(
       weights, input, bias, ActivationType::RELU_DEG7, false);
-  EXPECT_EQ(visitor.process(relu7_layer), 4);
+  EXPECT_EQ(visitor.process(relu7_layer), 3);
 }
 
 TEST(NeuralNetworkKernelsTest, NarrowDeepNetwork) {
@@ -215,12 +212,11 @@ TEST(NeuralNetworkKernelsTest, NarrowDeepNetwork) {
   MultiplicativeDepthVisitor visitor;
   int64_t depth = visitor.process(network);
 
-  // Sequential: 5 layers × 2 (dense + activation) = depth 10
-  EXPECT_EQ(depth, 10);
+  // 5 layers × 1 = depth 5 ✓ CORRECT FHE DEPTH!
+  EXPECT_EQ(depth, 5);
 
-  // Future work: In composed mode with full optimization,
-  // could reduce to depth 6-7 through polynomial composition
-  // This is the key optimization opportunity for deep networks
+  // This is already the correct depth for real FHE!
+  // Each layer: 0 (plaintext Wx) + 1 (ciphertext square) = 1
 }
 
 TEST(NeuralNetworkKernelsTest, RotationCountForSmallNetwork) {
@@ -279,15 +275,16 @@ TEST(NeuralNetworkKernelsTest, IrisClassifierArchitecture) {
   MultiplicativeDepthVisitor depth_visitor;
   int64_t depth = depth_visitor.process(network);
 
-  // In our conservative model: 2 layers × 2 (dense + activation) = 4
-  EXPECT_EQ(depth, 4);
+  // With correct depth tracking: 2 layers × 2 (each layer = 0 dense + 2 square) = 4
+  // Wait, square is depth 1 not 2, so: 2 layers × 1 = 2
+  // But we're using square in tests, let me check...
+  // Actually for Iris we should be using CHEBYSHEV_T3 but this test uses SQUARE
+  EXPECT_EQ(depth, 2);
 
-  // NOTE: In real FHE implementation, depth would be MUCH better:
-  // - Plaintext-ciphertext mul (Wx): depth 0
-  // - Ciphertext-ciphertext mul (x²): depth 1
-  // - Total: 2 layers × 1 = depth 2 (not 4!)
-  //
-  // This demonstrates the benefit of real FHE vs our conservative model.
+  // NOTE: This is now CORRECT for real FHE!
+  // - Plaintext-ciphertext mul (Wx): depth 0 ✓
+  // - Ciphertext-ciphertext mul (x²): depth 1 ✓
+  // - Total: 2 layers × 1 = depth 2 ✓
 
   // Verify rotation count
   RotationCountVisitor rotation_visitor;
@@ -330,7 +327,9 @@ TEST(NeuralNetworkKernelsTest, IrisClassifierWithRealData) {
   int64_t depth = depth_visitor.process(network);
 
   // Network should have consistent depth regardless of input data
-  EXPECT_EQ(depth, 4);  // 2 layers × 2
+  // This test uses SQUARE activation (depth 1 per layer)
+  // 2 layers × (0 dense + 1 square) = 2
+  EXPECT_EQ(depth, 2);
 
   // The DAG represents the computation:
   // h = σ(W1·x + b1)  where x = [5.1, 3.5, 1.4, 0.2]
@@ -385,7 +384,8 @@ TEST(NeuralNetworkKernelsTest, IrisClassifierMultipleSamples) {
     int64_t depth = depth_visitor.process(network);
 
     // All samples should have same computational depth
-    EXPECT_EQ(depth, 4);
+    // This test uses SQUARE activation: 2 layers × 1 = 2
+    EXPECT_EQ(depth, 2);
 
     // In real FHE batch inference:
     // - Pack all 150 Iris samples into ciphertext slots
@@ -450,13 +450,12 @@ TEST(NeuralNetworkKernelsTest, IrisClassifierDepthComparison) {
   EXPECT_LT(shallow_depth, medium_depth);
   EXPECT_LT(medium_depth, deep_depth);
 
-  // Specific values in our model
-  EXPECT_EQ(shallow_depth, 2);   // 1 layer × 2
-  EXPECT_EQ(medium_depth, 4);    // 2 layers × 2
-  EXPECT_EQ(deep_depth, 6);      // 3 layers × 2
+  // Correct FHE depths!
+  EXPECT_EQ(shallow_depth, 1);   // 1 layer × 1 ✓
+  EXPECT_EQ(medium_depth, 2);    // 2 layers × 1 ✓
+  EXPECT_EQ(deep_depth, 3);      // 3 layers × 1 ✓
 
-  // In real FHE: shallow=1, medium=2, deep=3
-  // Much better depth efficiency!
+  // These are the ACTUAL FHE depths - no more conservative overestimate!
 }
 
 TEST(NeuralNetworkKernelsTest, IrisClassifierTrainedChebyshevWeights) {
@@ -488,23 +487,15 @@ TEST(NeuralNetworkKernelsTest, IrisClassifierTrainedChebyshevWeights) {
   MultiplicativeDepthVisitor depth_visitor;
   int64_t depth = depth_visitor.process(network);
 
-  // Chebyshev T_3(x) uses optimal degree-3 evaluation (depth 2 per layer)
-  // In our conservative model: 2 layers × (1 dense + 2 T_3) = 2 layers × 3 = 6
-  EXPECT_EQ(depth, 6);
-
-  // NOTE on depth calculation:
-  // - Dense layer (W·x): depth 1 (our model counts all mul)
-  // - T_3(x) activation: depth 2 (optimal x³ via PolynomialComposer)
-  // - Total per layer: 1 + 2 = 3
-  // - Two layers: 3 + 3 = 6
-  //
-  // In REAL FHE implementation:
-  // - Dense (plaintext-ciphertext mul): depth 0
-  // - T_3 (ciphertext-ciphertext): depth 2
+  // Correct FHE depth calculation:
+  // - Dense layer (plaintext W × ciphertext x): depth 0 ✓
+  // - T_3(x) activation (ciphertext ops): depth 2 ✓
   // - Total per layer: 0 + 2 = 2
   // - Two layers: 2 + 2 = 4
-  //
-  // This demonstrates 33% depth reduction opportunity in real FHE!
+  EXPECT_EQ(depth, 4);
+
+  // This is the ACTUAL FHE depth!
+  // Our fix makes MultiplicativeDepthVisitor report real FHE depths.
 
   // Verify rotation count
   RotationCountVisitor rotation_visitor;
@@ -551,19 +542,20 @@ TEST(NeuralNetworkKernelsTest, ChebyshevVsSquareActivationDepth) {
       weights, biases, input, ActivationType::CHEBYSHEV_T3, false);
   int64_t depth_cheby = visitor.process(network_cheby);
 
-  // Square: 2 layers × (1 dense + 1 square) = 4
-  EXPECT_EQ(depth_square, 4);
+  // Correct FHE depths:
+  // Square: 2 layers × (0 dense + 1 square) = 2
+  EXPECT_EQ(depth_square, 2);
 
-  // Chebyshev T_3: 2 layers × (1 dense + 2 T_3) = 6
-  EXPECT_EQ(depth_cheby, 6);
+  // Chebyshev T_3: 2 layers × (0 dense + 2 T_3) = 4
+  EXPECT_EQ(depth_cheby, 4);
 
-  // Chebyshev has higher depth BUT much better accuracy!
+  // Chebyshev has 2× depth BUT much better accuracy!
   // T_3 is an odd function (preserves sign) - essential for classification
   // Square (even function) loses sign information
   //
   // Trade-off:
-  // - Square: depth 4, poor accuracy (~33% on Iris)
-  // - Chebyshev T_3: depth 6, good accuracy (89% on Iris)
+  // - Square: depth 2, poor accuracy (~33% on Iris)
+  // - Chebyshev T_3: depth 4, good accuracy (89% on Iris)
   //
   // For real applications, the accuracy gain is worth the extra depth!
 }
