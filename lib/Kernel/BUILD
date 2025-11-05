@@ -153,3 +153,61 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "PolynomialComposer",
+    hdrs = ["PolynomialComposer.h"],
+    deps = [
+        ":ArithmeticDag",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+cc_library(
+    name = "PolynomialActivations",
+    srcs = ["PolynomialActivations.cpp"],
+    hdrs = ["PolynomialActivations.h"],
+    deps = [
+        ":AbstractValue",
+        ":ArithmeticDag",
+        ":PolynomialComposer",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+cc_test(
+    name = "PolynomialActivationsTest",
+    srcs = ["PolynomialActivationsTest.cpp"],
+    deps = [
+        ":AbstractValue",
+        ":ArithmeticDag",
+        ":MultiplicativeDepthVisitor",
+        ":PolynomialActivations",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "NeuralNetworkKernels",
+    hdrs = ["NeuralNetworkKernels.h"],
+    deps = [
+        ":AbstractValue",
+        ":ArithmeticDag",
+        ":PolynomialActivations",
+        ":PolynomialComposer",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+cc_test(
+    name = "NeuralNetworkKernelsTest",
+    srcs = ["NeuralNetworkKernelsTest.cpp"],
+    deps = [
+        ":AbstractValue",
+        ":ArithmeticDag",
+        ":MultiplicativeDepthVisitor",
+        ":NeuralNetworkKernels",
+        ":RotationCountVisitor",
+        "@googletest//:gtest_main",
+    ],
+)
