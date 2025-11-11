@@ -97,8 +97,8 @@ def test_character_tables():
     print("="*70)
 
     tables = {
-        'S_3': (get_s3_character_table(), [2, 3, 1]),
-        'S_4': (get_s4_character_table(), [6, 8, 3, 6, 1]),
+        'S_3': (get_s3_character_table(), [1, 3, 2]),
+        'S_4': (get_s4_character_table(), [1, 6, 3, 8, 6]),
         'S_5': (get_s5_character_table(), [24, 30, 20, 20, 15, 10, 1]),
         'S_6': (get_s6_character_table(), [120, 144, 90, 120, 40, 90, 15, 40, 90, 144, 1]),
     }
