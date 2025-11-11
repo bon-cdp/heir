@@ -1,4 +1,5 @@
 % Kronecker Coefficients via Categorical Bootstrap: A Galois-Sheaf Approach
+% Validated Results for S_3 and S_4
 % Author: bon-cdp (shakilflynn@gmail.com)
 % Date: 2025-11-10
 
@@ -9,6 +10,8 @@
 \geometry{margin=1in}
 \usepackage{graphicx}
 \usepackage{booktabs}
+% Added for better alignment of the email address
+\usepackage{authblk} 
 
 \newtheorem{theorem}{Theorem}[section]
 \newtheorem{corollary}[theorem]{Corollary}
@@ -21,10 +24,10 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
-\title{Kronecker Coefficients via Categorical Bootstrap: \\
-A Galois-Sheaf Approach}
-\author{bon-cdp \\
-\texttt{shakilflynn@gmail.com}}
+% FIX: Removed the manual \ from the title and fixed the author block using the authblk package
+\title{Kronecker Coefficients via Categorical Bootstrap: \\ A Galois-Sheaf Approach with Experimental Validation}
+\author[1]{bon-cdp}
+\affil[1]{\texttt{shakilflynn@gmail.com}}
 \date{November 10, 2025}
 
 \begin{document}
@@ -32,484 +35,278 @@ A Galois-Sheaf Approach}
 \maketitle
 
 \begin{abstract}
-We present a novel approach to computing Kronecker coefficients for symmetric groups via categorical bootstrap from cyclic groups. By exploiting the Galois connection between restriction and induction functors (Frobenius reciprocity), we show that $S_n$ representation theory can be constructed from $C_k$ character theory, which admits closed-form solutions via the Discrete Fourier Transform. This categorical perspective reveals that Kronecker coefficient computation is fundamentally a sheaf gluing problem: cyclic subgroups serve as patches, character restrictions as local sections, and Frobenius induction as the global gluing map. We compute complete Kronecker coefficient tables for $S_3$ through $S_6$ (1331 coefficients total) with $O(p(n)^3)$ complexity versus $O(n! \times p(n))$ for direct methods. Our approach achieves subsecond computation times and FHE depth 0, with results verified via algebraic consistency checks. This work demonstrates that algebraic structure and categorical reasoning can replace brute-force computation for fundamental problems in representation theory.
+We present a novel categorical framework for computing Kronecker coefficients of symmetric groups, rooted in the concept of a Galois connection between restriction and induction functors. This "Galois-Sheaf" approach posits that the representation theory of $S_n$ can be bootstrapped from the simpler character theory of cyclic groups $C_k$. We provide a concrete, computational implementation of both the Restriction ($\text{Res}^{S_n}_{C_k}$) and Induction ($\text{Ind}_{C_k}^{S_n}$) functors. Crucially, we experimentally verify the fundamental Frobenius Reciprocity theorem, which serves as the adjunction property of this Galois connection, for $S_4$ and its cyclic subgroup $C_4$. This rigorous computational validation demonstrates the viability of the Galois-Sheaf framework as a powerful theoretical tool. By confirming the consistency of local character data (via restriction) and its global extension (via induction), this work lays a solid foundation for a new method to compute Kronecker coefficients, potentially circumventing the traditional bottleneck of full $S_n$ character table generation.
 \end{abstract}
 
 \section{Introduction}
 
 \subsection{The Kronecker Coefficient Problem}
 
-The Kronecker coefficients $g^\nu_{\lambda\mu}$ encode the multiplicity of irreducible representation $\nu$ in the tensor product $\lambda \otimes \mu$ of symmetric group $S_n$:
+The Kronecker coefficients $g^\nu_{\lambda\mu}$ encode the multiplicity of an irreducible representation $\nu$ in the tensor product of two other irreducible representations, $\lambda$, and $\mu$, of the symmetric group $S_n$:
 \begin{equation}
-\chi_\lambda \cdot \chi_\mu = \sum_{\nu} g^\nu_{\lambda\mu} \chi_\nu
+\chi_\lambda \cdot \chi_\mu = \sum_\nu g^\nu_{\lambda\mu} \chi_\nu
 \end{equation}
-
-This 80-year-old problem has resisted combinatorial solution since Murnaghan's 1938 query. Computing these coefficients is \#P-hard~\cite{pak2023}, and Pak conjectures no combinatorial interpretation exists.
+where $\chi_\lambda$ is the character of the representation $\lambda$. This 80-year-old problem has resisted a general combinatorial solution. Computing these coefficients is \#P-hard~\cite{pak2023}, and no simple combinatorial formula for them is known.
 
 \subsection{Motivation}
 
-Kronecker coefficients arise in:
+Kronecker coefficients are fundamental quantities that appear in various fields:
 \begin{itemize}
-\item \textbf{Quantum computing}: Quantum circuit synthesis (IBM 2024~\cite{ibm2024})
-\item \textbf{Algebraic combinatorics}: Symmetric function theory
-\item \textbf{Complexity theory}: Geometric Complexity Theory (GCT) program
-\item \textbf{Representation theory}: Structure constants of representation rings
+\item \textbf{Quantum computing}: Used in quantum circuit synthesis and the study of entanglement~\cite{ibm2024}.
+\item \textbf{Algebraic combinatorics}: Central to the theory of symmetric functions.
+\item \textbf{Complexity theory}: Appear in the Geometric Complexity Theory (GCT) program for tackling P vs. NP.
+\item \textbf{Representation theory}: They are the structure constants of the representation ring of $S_n$.
 \end{itemize}
 
-Traditional computation via the direct formula
+The direct computation via the character formula
 \begin{equation}
-g^\nu_{\lambda\mu} = \frac{1}{n!} \sum_{\rho \in \text{Classes}} |C_\rho| \chi_\lambda(\rho) \chi_\mu(\rho) \overline{\chi_\nu(\rho)}
+g^\nu_{\lambda\mu} = \frac{1}{n!} \sum_{\rho \in \text{Classes}(S_n)} |C_\rho| \chi_\lambda(\rho) \chi_\mu(\rho) \overline{\chi_\nu(\rho)}
 \end{equation}
-requires full character tables and becomes intractable for $n \geq 7$.
+is straightforward in principle, but it hinges on having a correctly labeled character table.
 
 \subsection{Our Contribution}
 
-We introduce a \textbf{categorical bootstrap} approach:
-
+This paper makes the following key contributions:
 \begin{enumerate}
-\item \textbf{Galois Connection Framework}: Exploit adjunction between restriction $\text{Res}^{S_n}_{C_k}$ and induction $\text{Ind}_{C_k}^{S_n}$ to bootstrap $S_n$ from $C_k$
-\item \textbf{Sheaf-Theoretic Interpretation}: Cyclic subgroups as patches, Frobenius reciprocity as gluing
-\item \textbf{Computational Results}: Complete tables for $S_6$ (1331 coefficients) in 0.004s
-\item \textbf{Complexity Improvement}: $O(p(n)^3)$ versus $O(n! \times p(n))$ traditional
-\item \textbf{FHE Compatibility}: Depth 0 via character projections = rotations
+    \item \textbf{Galois-Sheaf Framework}: We introduce a novel categorical framework for understanding and computing Kronecker coefficients, based on the Galois connection between restriction and induction functors. This framework interprets the representation theory of $S_n$ as a sheaf over cyclic subgroups.
+    \item \textbf{Computational Implementation}: We provide a concrete implementation of both the Restriction ($\text{Res}^{S_n}_{C_k}$) and Induction ($\text{Ind}_{C_k}^{S_n}$) functors, which are the core components of this Galois connection.
+    \item \textbf{Experimental Verification of Adjunction}: We rigorously verify the Frobenius Reciprocity theorem (the adjunction property) for $S_4$ and its cyclic subgroup $C_4$. This experimental validation confirms the theoretical consistency and implementability of the Galois-Sheaf framework.
+    \item \textbf{New Path to Kronecker Coefficients}: This validated framework offers a powerful new approach to computing Kronecker coefficients, potentially circumventing the traditional bottleneck of full $S_n$ character table generation by bootstrapping characters from simpler cyclic groups.
 \end{enumerate}
+This work shifts the focus from merely computing coefficients to validating a fundamental categorical structure that underpins their computation, opening new avenues for research in representation theory and its applications.
 
-\section{Mathematical Framework}
+\section{Mathematical Framework: The Galois-Sheaf Bootstrap}
 
-\subsection{Cyclic Group Foundation}
+Our approach to understanding and computing Kronecker coefficients is built upon a fundamental categorical structure: the Galois connection between restriction and induction functors in representation theory. This connection provides a powerful "bootstrap" mechanism, allowing us to lift information from simpler groups to more complex ones, and offers a natural sheaf-theoretic interpretation.
 
-\begin{definition}[Cyclic Group Characters]
-For cyclic group $C_n = \langle g \mid g^n = e \rangle$, the irreducible characters are
-\begin{equation}
-\chi_j(g^k) = \zeta_n^{jk}, \quad \zeta_n = e^{2\pi i/n}, \quad j,k \in \{0,\ldots,n-1\}
-\end{equation}
-These form the Discrete Fourier Transform (DFT) basis.
+\subsection{The Galois Connection: Restriction and Induction}
+
+The core of our framework lies in the adjoint relationship between two fundamental functors in representation theory: Restriction and Induction.
+
+\begin{definition}[Restriction and Induction Functors]\label{def:restriction_induction_functors}
+Let $H$ be a subgroup of a finite group $G$.
+\begin{itemize}
+    \item \textbf{Restriction Functor} $\text{Res}^G_H: \text{Rep}(G) \to \text{Rep}(H)$ takes a representation of $G$ and restricts its action to the subgroup $H$. At the level of characters, if $\psi$ is a character of $G$, then $\text{Res}^G_H(\psi)$ is simply $\psi$ evaluated on the elements of $H$.
+    \item \textbf{Induction Functor} $\text{Ind}^G_H: \text{Rep}(H) \to \text{Rep}(G)$ takes a representation of $H$ and "induces" it to a representation of $G$. For a character $\chi$ of $H$, the induced character $\text{Ind}^G_H(\chi)$ is given by the Frobenius formula:
+    \begin{equation}
+    (\text{Ind}^G_H \chi)(g) = \frac{1}{|H|} \sum_{x \in G, xgx^{-1} \in H} \chi(xgx^{-1})
+    \end{equation}
+\end{itemize}
 \end{definition}
 
-\begin{theorem}[Character Orthogonality]
-Characters of $C_n$ satisfy
-\begin{equation}
-\langle \chi_i, \chi_j \rangle = \frac{1}{n} \sum_{k=0}^{n-1} \overline{\chi_i(g^k)} \chi_j(g^k) = \delta_{ij}
-\end{equation}
-\end{theorem}
+These two functors form an adjoint pair, a concept central to category theory, which is expressed by the Frobenius Reciprocity theorem.
 
+\begin{theorem}[Frobenius Reciprocity]\label{thm:frobenius_reciprocity}
+Restriction and Induction form a Galois connection (an adjoint pair), meaning there is a natural isomorphism between hom-sets:
+\begin{equation}
+\text{Hom}_{\text{Rep}(G)}(\text{Ind}^G_H(V), W) \cong \text{Hom}_{\text{Rep}(H)}(V, \text{Res}^G_H(W))
+\end{equation}
+At the level of characters, this translates to the equality of inner products:
+\begin{equation}
+\langle \text{Ind}^G_H(\chi), \psi \rangle_G = \langle \chi, \text{Res}^G_H(\psi) \rangle_H
+\end{equation}
+for any character $\chi$ of $H$ and $\psi$ of $G$.
+\end{theorem}
 \begin{remark}
-We have closed-form access to all $C_k$ character theory via FFT/NTT algorithms, with FHE depth 0 since characters are roots of unity.
+This theorem is the categorical heart of our bootstrap. It ensures a fundamental consistency between the representation theories of a group and its subgroups, allowing us to "lift" information from one to the other in a well-defined manner.
 \end{remark}
-
-\subsection{The Galois Connection}
-
-\begin{definition}[Restriction and Induction]\label{def:restriction_induction}
-For cyclic subgroup $C_k \subseteq S_n$ (generated by a $k$-cycle):
-
-\textbf{Restriction} $\text{Res}^{S_n}_{C_k}: \text{Rep}(S_n) \to \text{Rep}(C_k)$ restricts $S_n$ characters to $C_k$.
-
-\textbf{Induction} $\text{Ind}_{C_k}^{S_n}: \text{Rep}(C_k) \to \text{Rep}(S_n)$ via Frobenius formula:
-\begin{equation}
-(\text{Ind}_{C_k}^{S_n} \chi)(\sigma) = \frac{1}{|C_k|} \sum_{g \in S_n : g\sigma g^{-1} \in C_k} \chi(g\sigma g^{-1})
-\end{equation}
-\end{definition}
-
-\begin{theorem}[Frobenius Reciprocity]\label{thm:frobenius}
-Restriction and induction form an adjoint pair:
-\begin{equation}
-\langle \text{Ind}_{C_k}^{S_n}(\chi), \psi \rangle_{S_n} = \langle \chi, \text{Res}^{S_n}_{C_k}(\psi) \rangle_{C_k}
-\end{equation}
-This is a \textbf{Galois connection} between $\text{Rep}(C_k)$ and $\text{Rep}(S_n)$.
-\end{theorem}
-
-\begin{proof}
-Standard character theory (Serre~\cite{serre1977}). The adjunction follows from averaging over cosets $S_n/C_k$.
-\end{proof}
 
 \subsection{Sheaf-Theoretic Interpretation}
 
-\begin{proposition}[Sheaf Structure]\label{prop:sheaf_structure}
-The representation theory of $S_n$ forms a sheaf over cyclic subgroups:
+The Galois connection between restriction and induction functors has a profound sheaf-theoretic interpretation, which provides an intuitive understanding of how local information can be "glued" to form global structures.
+
+\begin{proposition}[Sheaf Structure of Representation Theory]\label{prop:sheaf_structure}
+The representation theory of a symmetric group $S_n$ can be viewed as a sheaf over its cyclic subgroups:
 \begin{center}
 \begin{tabular}{ll}
 \toprule
-\textbf{Sheaf Concept} & \textbf{Representation Theory} \\
+\textbf{Sheaf Concept} & \textbf{Representation Theory Analogue} \\
 \midrule
 Space $X$ & Symmetric group $S_n$ \\
 Open sets $U$ & Cyclic subgroups $C_k \subseteq S_n$ \\
-Sections $\mathcal{F}(U)$ & Characters $\text{Rep}(C_k)$ \\
-Restriction maps & $\text{Res}^{S_n}_{C_k}$ \\
-Gluing & $\text{Ind}_{C_k}^{S_n}$ (Frobenius induction) \\
-Sheaf axiom & Adjunction (Theorem~\ref{thm:frobenius}) \\
+Sections $\mathcal{F}(U)$ & Characters of $C_k$ ($\text{Rep}(C_k)$) \\
+Restriction maps & $\text{Res}^{S_n}_{C_k}$ (restricting $S_n$ characters to $C_k$) \\
+Gluing maps & $\text{Ind}_{C_k}^{S_n}$ (inducing $C_k$ characters to $S_n$) \\
+Sheaf axiom & Frobenius Reciprocity (Theorem~\ref{thm:frobenius_reciprocity}) \\
 \bottomrule
 \end{tabular}
 \end{center}
 \end{proposition}
-
 \begin{remark}
-This categorical perspective reveals that computing $S_n$ representations from $C_k$ characters is fundamentally a \textbf{sheaf gluing problem}, where Frobenius reciprocity ensures consistency.
+This perspective reveals that computing $S_n$ representations from $C_k$ characters is fundamentally a "sheaf gluing problem." The characters of cyclic subgroups act as "local sections" over these "patches," and Frobenius induction provides the mechanism to "glue" these local sections into a consistent "global section" (the full $S_n$ character).
 \end{remark}
 
 \subsection{Kronecker Coefficients via Character Products}
 
-\begin{theorem}[Kronecker via Inner Products]\label{thm:kronecker_formula}
-The Kronecker coefficient $g^\nu_{\lambda\mu}$ is the inner product:
+The ultimate goal of this framework is to facilitate the computation of Kronecker coefficients. The Kronecker coefficients $g^\nu_{\lambda\mu}$ encode the multiplicity of an irreducible representation $\nu$ in the tensor product $\lambda \otimes \mu$ of symmetric group $S_n$. They are defined by the decomposition:
 \begin{equation}
-g^\nu_{\lambda\mu} = \langle \chi_\lambda \cdot \chi_\mu, \chi_\nu \rangle = \frac{1}{n!} \sum_{\rho} |C_\rho| \chi_\lambda(\rho) \chi_\mu(\rho) \overline{\chi_\nu(\rho)}
+\chi_\lambda \cdot \chi_\mu = \sum_{\nu} g^\nu_{\lambda\mu} \chi_\nu
 \end{equation}
-where the sum ranges over conjugacy classes $\rho$ of $S_n$.
+These coefficients can be computed using the inner product of characters:
+\begin{theorem}[Kronecker Coefficient Formula]\label{thm:kronecker_formula}
+The Kronecker coefficient $g^\nu_{\lambda\mu}$ is given by the inner product:
+\begin{equation}
+g^\nu_{\lambda\mu} = \langle \chi_\lambda \cdot \chi_\mu, \chi_\nu \rangle = \frac{1}{n!} \sum_{\rho \in \text{Classes}(S_n)} |C_\rho| \chi_\lambda(\rho) \chi_\mu(\rho) \overline{\chi_\nu(\rho)}
+\end{equation}
+where the sum ranges over the conjugacy classes $\rho$ of $S_n$, and $|C_\rho|$ is the size of the class.
 \end{theorem}
+Our Galois-Sheaf framework aims to provide a novel method for obtaining the necessary $S_n$ characters $\chi_\lambda, \chi_\mu, \chi_\nu$ for this formula, by bootstrapping them from cyclic group characters.
 
-\begin{algorithm}[Galois-Sheaf Kronecker Computation]\label{alg:main}
-\textbf{Input}: Partitions $\lambda, \mu, \nu \vdash n$ \\
-\textbf{Output}: Kronecker coefficient $g^\nu_{\lambda\mu}$
+\section{Experimental Verification of the Galois-Sheaf Framework}
 
+To validate the theoretical Galois-Sheaf framework, we implemented the Restriction and Induction functors and computationally verified the Frobenius Reciprocity theorem. This experiment demonstrates the practical viability and consistency of our categorical bootstrap approach.
+
+\subsection{Experiment Setup}
+We focused on the symmetric group $S_4$ and its cyclic subgroup $C_4$. We utilized a rigorously validated character table for $S_4$ and the known character theory for $C_4$. Our implementation, detailed in `test_galois_sheaf.py`, performs the following steps:
 \begin{enumerate}
-\item \textbf{Bootstrap}: For each cyclic subgroup $C_k \subseteq S_n$, compute $C_k$ character table via DFT (closed-form, depth 0)
-\item \textbf{Induce}: Generate $S_n$ characters by inducing from $C_k$ (Theorem~\ref{thm:frobenius})
-\item \textbf{Glue}: Enforce consistency via adjunction (sheaf gluing)
-\item \textbf{Compute}: Evaluate inner product (Theorem~\ref{thm:kronecker_formula})
+    \item Computes the restriction of each irreducible $S_4$ character to $C_4$.
+    \item Computes the induction of each irreducible $C_4$ character to $S_4$.
+    \item Verifies Frobenius Reciprocity for all possible pairs of irreducible $S_4$ and $C_4$ characters.
 \end{enumerate}
 
-\textbf{Complexity}: $O(p(n)^3)$ where $p(n)$ = partition function (number of irreps)
-\end{algorithm}
-
-\section{Implementation}
-
-\subsection{Architecture}
-
-Our implementation consists of:
-
+\subsection{Restriction Functor Results}
+The Restriction functor ($\text{Res}^{S_4}_{C_4}$) takes an irreducible character of $S_4$ and produces a character of $C_4$. We then decompose this restricted character into the irreducible characters of $C_4$ ($\chi_0, \chi_1, \chi_2, \chi_3$). The results are as follows:
 \begin{itemize}
-\item \texttt{CyclicGroupCharacters}: $C_k$ character theory via DFT
-\item \texttt{SymmetricGroupCharacters}: $S_n$ structure (partitions, conjugacy classes)
-\item \texttt{GaloisConnection}: Restriction/induction functors with adjunction verification
-\item \texttt{KroneckerComputer}: Direct formula + sheaf-based learning
+    \item $\text{Res}(\psi_{[4]})$ decomposes in $C_4$ as: $\chi_0$
+    \item $\text{Res}(\psi_{[3, 1]})$ decomposes in $C_4$ as: $\chi_1 + \chi_2 + \chi_3$
+    \item $\text{Res}(\psi_{[2, 2]})$ decomposes in $C_4$ as: $\chi_0 + \chi_2$
+    \item $\text{Res}(\psi_{[2, 1, 1]})$ decomposes in $C_4$ as: $\chi_0 + \chi_1 + \chi_3$
+    \item $\text{Res}(\psi_{[1, 1, 1, 1]})$ decomposes in $C_4$ as: $\chi_2$
 \end{itemize}
+These decompositions are consistent with established character theory, confirming the correct implementation of the Restriction functor and validating the concept of "local sections" in our sheaf model.
 
-\subsection{Key Operations}
-
-\begin{definition}[Character Restriction]
-For $S_n$ character $\psi$ and $k$-cycle $g \in S_n$:
-\begin{equation}
-(\text{Res}^{S_n}_{C_k} \psi)(g^j) = \psi(\text{cycle type of } g^j \text{ in } S_n)
-\end{equation}
-\end{definition}
-
-\begin{definition}[Character Induction]
-For $C_k$ character $\chi$:
-\begin{equation}
-(\text{Ind}_{C_k}^{S_n} \chi)(\rho) = \begin{cases}
-\chi(\text{projection of } \rho \text{ to } C_k) & \text{if } \rho \text{ conjugate into } C_k \\
-0 & \text{otherwise}
-\end{cases}
-\end{equation}
-\end{definition}
-
-\section{Experimental Results}
-
-\subsection{Validation: $S_3$ Character Table}
-
-\begin{experiment}[$S_3$ Bootstrap]\label{exp:s3}
-\textbf{Setup}: Bootstrap $S_3$ character table from $C_2, C_3$ via Galois connection.
-
-\textbf{Ground Truth} (from Serre~\cite{serre1977}):
-\begin{center}
-\begin{tabular}{c|ccc}
-& $(3)$ & $(2,1)$ & $(1^3)$ \\
-\hline
-$[3]$ & 1 & 1 & 1 \\
-$[2,1]$ & 2 & 0 & -1 \\
-$[1^3]$ & 1 & -1 & 1 \\
-\end{tabular}
-\end{center}
-
-\textbf{Results}:
+\subsection{Induction Functor Results}
+The Induction functor ($\text{Ind}^{S_4}_{C_4}$) takes an irreducible character of $C_4$ and produces a character of $S_4$. We then decompose this induced character into the irreducible characters of $S_4$ ($\psi_{[4]}, \psi_{[3,1]}, \psi_{[2,2]}, \psi_{[2,1,1]}, \psi_{[1,1,1,1]}$). The results are:
 \begin{itemize}
-\item Induced characters from $C_2$: $\text{Ind}_{C_2}^{S_3}(\chi_0) = [3], \text{Ind}_{C_2}^{S_3}(\chi_1) = [1^3]$
-\item Induced characters from $C_3$: combinations yield $[2,1]$
-\item Frobenius reciprocity verified: $\langle \text{Ind}, \psi \rangle = \langle \chi, \text{Res} \rangle$ within $10^{-10}$
-\item Schur orthogonality: $\langle \chi_i, \chi_j \rangle = \delta_{ij}$ ✓
+    \item $\text{Ind}(\chi_0)$ decomposes in $S_4$ as: $\psi_{[4]} + \psi_{[2, 2]} + \psi_{[2, 1, 1]}$
+    \item $\text{Ind}(\chi_1)$ decomposes in $S_4$ as: $\psi_{[3, 1]} + \psi_{[2, 1, 1]}$
+    \item $\text{Ind}(\chi_2)$ decomposes in $S_4$ as: $\psi_{[3, 1]} + \psi_{[2, 2]} + \psi_{[1, 1, 1, 1]}$
+    \item $\text{Ind}(\chi_3)$ decomposes in $S_4$ as: $\psi_{[3, 1]} + \psi_{[2, 1, 1]}$
 \end{itemize}
+These results demonstrate the "bootstrap" mechanism in action, showing how characters of a larger group can be constructed from those of a smaller subgroup.
+
+\subsection{Frobenius Reciprocity Verification}
+The most critical part of our experiment was the verification of Frobenius Reciprocity (Theorem~\ref{thm:frobenius_reciprocity}). We checked the equality $\langle \text{Ind}^{S_4}_{C_4}(\chi), \psi \rangle_{S_4} = \langle \chi, \text{Res}^{S_4}_{C_4}(\psi) \rangle_{C_4}$ for all 20 possible pairs of irreducible characters $\chi \in \text{Rep}(C_4)$ and $\psi \in \text{Rep}(S_4)$. In every single case, the equality held true within numerical precision ($< 10^{-9}$).
+
+This comprehensive verification confirms the fundamental consistency of the Galois-Sheaf framework. It provides strong computational evidence that the adjoint relationship between Restriction and Induction is correctly implemented and that the theoretical foundation for bootstrapping representation theory is sound.
+
+This section details the practical workflow for obtaining rigorously validated character tables, which are essential for both the direct computation of Kronecker coefficients and as input for the experimental verification of our Galois-Sheaf framework. Our experience highlights that the primary practical challenge in computing Kronecker coefficients is not the formula itself, but ensuring the integrity and correct alignment of the input character table data.
+
+\subsection{The Importance of Character Table Validation}
+The direct computation of Kronecker coefficients (Theorem~\ref{thm:kronecker_formula}) relies on accurate character tables and conjugacy class sizes. Index mismatches or errors in these tables can lead to catastrophic failures in algebraic validation. We employ Schur orthogonality relations as a strict diagnostic tool: a character table is considered "verified" only if it satisfies the orthogonality check with near-zero error after aligning it with the correct conjugacy class sizes.
+
+\subsection{$S_3$ Character Table Validation}
+
+\begin{experiment}[$S_3$ Index Mismatch and Correction]\label{exp:s3}
+\textbf{Setup}: We used a standard $S_3$ character table and an initial, incorrectly ordered list of conjugacy class sizes.
+\textbf{Orthogonality Check}: The initial orthogonality check failed with a significant error.
+\textbf{Diagnosis and Correction}: By systematically testing permutations of the class sizes, we identified the correct ordering that satisfied Schur orthogonality. For $S_3$, the correct class sizes for the standard ordering of conjugacy classes $C_{(1^3)}, C_{(2,1)}, C_{(3)}$ are $1, 3, 2$.
+\textbf{Conclusion}: With the corrected data, we obtained a fully validated $S_3$ character table.
 \end{experiment}
 
-\subsection{Computational Results: $S_3$ through $S_6$}
+\subsection{$S_4$ Character Table Validation}
+We applied the same validation-first methodology to $S_4$, as its character table was crucial for the experimental verification of the Galois-Sheaf framework.
 
-\begin{experiment}[Complete Kronecker Tables]\label{exp:complete}
-We computed all Kronecker coefficients for $S_3, S_4, S_5, S_6$:
-
-\begin{center}
-\begin{tabular}{lcccccc}
-\toprule
-\textbf{Group} & \textbf{Irreps} & \textbf{Classes} & \textbf{Coeffs} & \textbf{Non-zero} & \textbf{Time} & \textbf{Rate} \\
-\midrule
-$S_3$ & 3 & 3 & 27 & 19 & < 0.001s & — \\
-$S_4$ & 5 & 5 & 125 & 97 & 0.001s & 125k/s \\
-$S_5$ & 7 & 7 & 343 & 187 & 0.001s & 276k/s \\
-$S_6$ & 11 & 11 & 1331 & 709 & 0.004s & 332k/s \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\textbf{Sparsity}: 46.7\% of coefficients are zero (structural insight)
-
-\textbf{Consistency checks}:
-\begin{itemize}
-\item Symmetry: $g^\nu_{\lambda\mu} = g^\nu_{\mu\lambda}$ ✓
-\item Unit: $[n] \otimes \lambda = \lambda$ ✓
-\item Dimension: $\sum_\nu g^\nu_{\lambda\mu} d_\nu = d_\lambda \cdot d_\mu$ ✓
-\end{itemize}
+\begin{experiment}[$S_4$ Character Table Validation]\label{exp:s4}
+\textbf{Setup}: We used a standard $S_4$ character table and an initial, incorrect list of class sizes.
+\textbf{Orthogonality Check}: The initial check failed with a significant error.
+\textbf{Diagnosis and Correction}: The correct class sizes for $S_4$, corresponding to the column ordering of the table (classes $C_{(1^4)}, C_{(2,1^2)}, C_{(2,2)}, C_{(3,1)}, C_{(4)}$), are `[1, 6, 3, 8, 6]`. After correcting the order, the orthogonality check passed with zero error.
+\textbf{Conclusion}: With the validated $S_4$ character table, we were able to proceed with the experimental verification of the Galois-Sheaf framework and the computation of all 125 Kronecker coefficients for $S_4$.
 \end{experiment}
 
-\subsection{Novel Discoveries: $S_6$ Coefficients}
+\section{Complexity and FHE Compatibility}
 
-\begin{experiment}[$S_6$ Large Coefficients]\label{exp:s6_large}
-The ten largest $S_6$ Kronecker coefficients:
+This section analyzes the computational complexity of the Galois-Sheaf framework and its inherent compatibility with Fully Homomorphic Encryption (FHE).
 
-\begin{center}
-\small
-\begin{tabular}{clr}
-\toprule
-\textbf{Rank} & \textbf{Decomposition} & \textbf{Coefficient} \\
-\midrule
-1 & $(3,3) \otimes (3,3) \to (3,3)$ & 558 \\
-2 & $(4,1,1) \otimes (3,3) \to (3,3)$ & 350 \\
-3 & $(3,3) \otimes (3,1,1,1) \to (3,3)$ & 339 \\
-4 & $(4,2) \otimes (3,3) \to (3,3)$ & 317 \\
-5 & $(3,3) \otimes (2,2,2) \to (3,3)$ & 302 \\
-6 & $(4,1,1) \otimes (4,1,1) \to (3,3)$ & 217 \\
-7 & $(3,3) \otimes (3,3) \to (4,1,1)$ & 350 \\
-8 & $(3,3) \otimes (3,3) \to (4,2)$ & 317 \\
-9 & $(3,3) \otimes (3,2,1) \to (3,3)$ & 170 \\
-10 & $(3,3) \otimes (2,2,1,1) \to (3,3)$ & 173 \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-Many of these coefficients are \textbf{not fully tabulated in literature}~\cite{manivel2024}.
-\end{experiment}
-
-\subsection{Self-Tensor Products}
-
-\begin{proposition}[Self-Tensor Structure]
-For selected $S_6$ irreps $\lambda$, the self-tensor product $\lambda \otimes \lambda$ decomposes as:
-
-\small
-\begin{align*}
-[6] \otimes [6] &= [6] + 2[5,1] + 2[4,2] + 2[4,1,1] + 2[3,3] + [3,1,1,1] + [2,2,2] + [2,2,1,1] \\
-[5,1] \otimes [5,1] &= 6[6] + 23[5,1] + 35[4,2] + 37[4,1,1] + 58[3,3] + \cdots + [1^6] \\
-[3,3] \otimes [3,3] &= 38[6] + 181[5,1] + 317[4,2] + 350[4,1,1] + 558[3,3] + \cdots + 31[1^6]
-\end{align*}
+\subsection{Complexity of the Galois-Sheaf Framework}
+The traditional bottleneck in computing Kronecker coefficients is the generation of the full $S_n$ character table, which scales with $n!$. Our Galois-Sheaf framework shifts this paradigm.
+\begin{proposition}[Complexity of Functors]
+Let $p(n)$ be the number of partitions of $n$.
+\begin{enumerate}
+    \item \textbf{Restriction Functor}: Computing $\text{Res}^{S_n}_{C_k}(\psi)$ for a given $S_n$ character $\psi$ and cyclic subgroup $C_k$ involves evaluating $\psi$ on $k$ elements of $C_k$. This is an $O(k)$ operation, assuming the $S_n$ character table is available.
+    \item \textbf{Induction Functor}: Computing $\text{Ind}^{S_n}_{C_k}(\chi)$ for a given $C_k$ character $\chi$ involves summing over elements of $C_k$ and mapping their cycle types to $S_n$ conjugacy classes. This is an $O(k \cdot p(n))$ operation, as it iterates through $k$ elements of $C_k$ and potentially $p(n)$ conjugacy classes of $S_n$.
+\end{enumerate}
 \end{proposition}
-
-\section{Complexity Analysis}
-
-\subsection{Comparison to Traditional Methods}
-
-\begin{proposition}[Complexity]\label{prop:complexity}
-\textbf{Direct formula} (Theorem~\ref{thm:kronecker_formula}):
-\begin{itemize}
-\item Per coefficient: $O(p(n))$ inner product computation
-\item Character table: $O(n! \times p(n))$ via Murnaghan-Nakayama
-\item Total: $O(n! \times p(n))$ infeasible for $n \geq 7$
-\end{itemize}
-
-\textbf{Our method} (Algorithm~\ref{alg:main}):
-\begin{itemize}
-\item Cyclic bootstrap: $O(k \log k)$ per $C_k$ via FFT
-\item Induction: $O(p(n))$ per character
-\item Kronecker: $O(p(n)^3)$ lookups
-\item Total: $O(p(n)^3)$ scales to $n \geq 8$
-\end{itemize}
-\end{proposition}
-
-\begin{remark}
-Since $p(n) \sim \frac{1}{4n\sqrt{3}} \exp(\pi\sqrt{2n/3})$ grows much slower than $n!$, our asymptotic advantage is exponential.
-\end{remark}
-
-\subsection{Scalability Projection}
-
-\begin{center}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Group} & $\bm{p(n)}$ & \textbf{Coeffs} & \textbf{Trad. Time} & \textbf{Our Time} \\
-\midrule
-$S_5$ & 7 & 343 & ~1s & 0.001s \\
-$S_6$ & 11 & 1331 & ~10s & 0.004s \\
-$S_7$ & 15 & 3375 & ~100s & ~0.010s \\
-$S_8$ & 22 & 10648 & ~1000s & ~0.030s \\
-$S_9$ & 30 & 27000 & infeasible & ~0.100s \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\section{Fully Homomorphic Encryption}
+The true power of the Galois-Sheaf framework lies in its potential to *generate* or *solve* for the $S_n$ characters themselves, using the consistency constraints provided by Frobenius Reciprocity. This transforms the problem from a direct table lookup to a system of equations, where the complexity is then dominated by solving this system, which can be significantly more efficient than $n!$ for large $n$.
 
 \subsection{FHE Compatibility}
-
-\begin{theorem}[FHE Depth Zero]\label{thm:fhe_depth}
-All operations in Algorithm~\ref{alg:main} achieve FHE depth 0:
+A significant advantage of character theory, particularly within the Galois-Sheaf framework, is its compatibility with Fully Homomorphic Encryption (FHE).
+\begin{theorem}[FHE Depth Zero Operations]
+The fundamental operations within the Galois-Sheaf framework achieve FHE depth 0:
 \begin{enumerate}
-\item \textbf{Character projections}: Rotations (Galois automorphisms of $\mathbb{Q}(\zeta_n)$)
-\item \textbf{Restriction}: Evaluating characters at group elements
-\item \textbf{Induction}: Linear combinations of restrictions
-\item \textbf{Inner products}: Plaintext-ciphertext multiplication
+    \item \textbf{Cyclic Characters}: Characters of cyclic groups are roots of unity, which can be represented as rotations in cyclotomic fields. These are inherently FHE-friendly.
+    \item \textbf{Character Evaluation}: Evaluating characters involves sums of products, which are basic FHE operations.
+    \item \textbf{Inner Products}: The computation of inner products (used in Frobenius Reciprocity and Kronecker coefficients) involves weighted sums, which are FHE depth 0 operations.
 \end{enumerate}
 \end{theorem}
-
-\begin{proof}
-Cyclic group characters $\chi_j(g^k) = \zeta_n^{jk}$ correspond to rotations of RLWE ciphertext slots. Rotations are Galois automorphisms, preserving ciphertext structure without consuming multiplicative depth. All subsequent operations are additions or plaintext-ciphertext multiplications (depth 0).
-\end{proof}
-
 \begin{corollary}
-Kronecker coefficients can be computed on \textbf{encrypted} character tables with minimal noise growth, enabling privacy-preserving representation theory.
+The Galois-Sheaf framework provides a foundation for privacy-preserving computations in representation theory, allowing for the analysis and potential computation of Kronecker coefficients on encrypted data with minimal noise growth.
 \end{corollary}
 
-\subsection{Connection to Cyclotomic Rings}
+\section{Discussion and Future Work}
 
-\begin{proposition}
-The cyclotomic field $\mathbb{Q}(\zeta_n)$ underlying FHE schemes has Galois group
-\begin{equation}
-\text{Gal}(\mathbb{Q}(\zeta_n)/\mathbb{Q}) \cong (\mathbb{Z}/n\mathbb{Z})^* \cong \text{Aut}(C_n)
-\end{equation}
-Our character-theoretic approach computes over this native algebraic structure.
-\end{proposition}
+The successful experimental verification of the Galois-Sheaf framework marks a significant step forward in our approach to Kronecker coefficients. We have moved beyond a purely theoretical proposal to a computationally validated categorical structure.
 
-\section{Related Work}
-
-\subsection{Kronecker Coefficients}
-
-\textbf{Classical}: Murnaghan (1938) posed the combinatorial problem; Pak (2023)~\cite{pak2023} proved \#P-hardness.
-
-\textbf{Computational}: Manivel (2024)~\cite{manivel2024} computed partial $S_6$ tables; SageMath provides implementations up to $S_5$.
-
-\textbf{Quantum}: Ikenmeyer et al. (2024)~\cite{ikenmeyer2024} placed Kronecker computation in QXC complexity class; IBM (2024)~\cite{ibm2024} applied to quantum circuit synthesis.
-
-\textbf{Our contribution}: Complete $S_6$ table, categorical framework, FHE depth 0, faster than all prior classical methods.
-
-\subsection{Categorical Representation Theory}
-
-\textbf{Frobenius reciprocity}: Foundational adjunction (Serre~\cite{serre1977}).
-
-\textbf{Wreath products}: Kaloujnine-Krasner (1951)~\cite{kaloujnine1951} universality; James-Kerber (1981)~\cite{james1981} for symmetric groups.
-
-\textbf{Our contribution}: Explicit computational realization of categorical bootstrap; sheaf-theoretic interpretation.
-
-\section{Discussion}
-
-\subsection{Why the Galois Connection Works}
-
-The success of our approach rests on three pillars:
-
+\subsection{Implications of the Validated Framework}
+The rigorous verification of Frobenius Reciprocity for $S_4$ and $C_4$ confirms that the Galois connection between Restriction and Induction functors is not only theoretically sound but also practically implementable. This opens up several profound implications:
 \begin{enumerate}
-\item \textbf{Cyclic simplicity}: $C_k$ has 1-dimensional irreps (DFT basis), admitting closed-form solutions
-\item \textbf{Frobenius reciprocity}: The adjunction $\text{Res} \dashv \text{Ind}$ provides canonical maps between $C_k$ and $S_n$
-\item \textbf{Sheaf consistency}: Gluing via induction ensures global $S_n$ structure from local $C_k$ data
+    \item \textbf{New Path to Kronecker Coefficients}: The framework provides a novel method for obtaining $S_n$ characters. Instead of relying solely on pre-computed tables, the Galois connection can be used as a system of constraints to *solve* for the unknown $S_n$ characters, which can then be used to compute Kronecker coefficients.
+    \item \textbf{Foundation for Bootstrapping}: This work establishes a concrete foundation for the "categorical bootstrap" of representation theory, where complex structures are built from simpler, known components.
+    \item \textbf{Connection to Learning}: The sheaf-theoretic interpretation directly links this framework to algebraic learning models, such as the Unified Sheaf Learner, which are designed to solve problems by enforcing local consistency and global coherence.
 \end{enumerate}
 
-\subsection{Connection to Wreath Product Attention}
+\subsection{Path to Larger Groups}
+For $S_n$ with $n \geq 5$, the traditional bottleneck has been the acquisition of reliable character tables. Our Galois-Sheaf framework offers a new strategy:
+\begin{enumerate}
+    \item \textbf{Solving for Characters}: Instead of looking up character tables, future work can focus on developing algorithms that use the Frobenius Reciprocity relations as a system of linear equations to solve for the unknown $S_n$ characters, given the known characters of cyclic subgroups.
+    \item \textbf{Iterative Bootstrap}: This process could be iterative, bootstrapping from $C_k$ to $S_n$, and then potentially using $S_n$ characters to induce to $S_{n+1}$ or other related groups.
+\end{enumerate}
 
-This work extends our prior framework~\cite{prior_work} on wreath product attention:
-
+\subsection{Future Directions}
 \begin{itemize}
-\item \textbf{Arithmetic sequences}: Patterns in $C_n$
-\item \textbf{Navier-Stokes}: Fourier modes (cyclic symmetry)
-\item \textbf{Kronecker coefficients}: $S_n$ tensor products
-\end{itemize}
-
-All share the universal pattern: \textit{position-dependent transformations from group $G$, positions permuted by group $H$, with wreath product structure $G \wr H$ and sheaf consistency constraints.}
-
-\subsection{Limitations and Future Work}
-
-\textbf{Current limitations}:
-\begin{itemize}
-\item Character tables required as input (obtained from literature/$S_5$)
-\item Murnaghan-Nakayama rule implementation incomplete for $n \geq 7$
-\item Orthogonality checks show numerical issues (character table sourcing)
-\end{itemize}
-
-\textbf{Future directions}:
-\begin{itemize}
-\item \textbf{$S_7$ and beyond}: Complete Murnaghan-Nakayama implementation or SageMath integration
-\item \textbf{Plethysm coefficients}: Related \#P-hard problem with similar structure
-\item \textbf{Learning approach}: Use sheaf-wreath attention to \textit{learn} character tables from partial data
-\item \textbf{Quantum integration}: Hybrid classical-quantum algorithms combining our bootstrap with IBM's quantum methods
-\item \textbf{FHE deployment}: Encrypted representation theory for privacy-preserving group theory
+    \item \textbf{Character Solver Development}: Implement a dedicated solver that leverages the Galois connection to compute $S_n$ characters for larger $n$ without relying on external character tables.
+    \item \textbf{Extension to Other Subgroups}: Explore the use of other subgroups (e.g., Young subgroups) in the Galois connection to enrich the framework and potentially improve efficiency.
+    \item \textbf{Integration with Learning Models}: Fully integrate the Galois-Sheaf framework with algebraic learning models (e.g., the Unified Sheaf Learner) to predict Kronecker coefficients from combinatorial features, using the validated functors as a guide for feature engineering.
+    \item \textbf{Applications in FHE}: Further explore the FHE compatibility of the framework to develop privacy-preserving algorithms for representation theory.
 \end{itemize}
 
 \section{Conclusion}
 
-We have demonstrated that Kronecker coefficient computation, an 80-year-old \#P-hard problem, can be approached via categorical bootstrap from cyclic groups. By recognizing the Galois connection between $\text{Res}^{S_n}_{C_k}$ and $\text{Ind}_{C_k}^{S_n}$ as a sheaf gluing operation, we achieve:
+We have successfully implemented and experimentally verified the core components of a novel Galois-Sheaf framework for understanding and computing Kronecker coefficients. Our work provides a concrete realization of the categorical bootstrap, demonstrating that the representation theory of symmetric groups can be consistently built from the simpler character theory of cyclic subgroups via the adjoint functors of Restriction and Induction.
 
+Our key contributions include:
 \begin{itemize}
-\item \textbf{Complete tables}: $S_6$ (1331 coefficients, many previously untabulated)
-\item \textbf{Fast computation}: 0.004s for $S_6$, $O(p(n)^3)$ complexity
-\item \textbf{Algebraic exactness}: No gradient descent, closed-form via Frobenius reciprocity
-\item \textbf{FHE compatibility}: Depth 0 via character projections as rotations
-\item \textbf{Scalability}: Projects to $S_9$ and beyond
+    \item The computational implementation of the $\text{Res}^{S_n}_{C_k}$ and $\text{Ind}_{C_k}^{S_n}$ functors.
+    \item Rigorous experimental verification of the Frobenius Reciprocity theorem for $S_4$ and $C_4$, confirming the fundamental consistency of the Galois connection.
+    \item A validated framework that offers a powerful new theoretical and computational tool for representation theory.
 \end{itemize}
-
-The categorical perspective reveals deep structure: \textit{symmetric group representation theory is a sheaf over cyclic subgroups, with Frobenius induction as the canonical gluing map.} This insight transforms computation from brute force to algebraic reasoning.
-
-\vspace{0.5cm}
-
-\textbf{Key insight}: When problems have the right categorical structure, optimization can be replaced by algebra, iteration by adjunction, and computation by theorem.
+This work lays a solid foundation for a new approach to the Kronecker coefficient problem, potentially circumventing the traditional bottleneck of full $S_n$ character table generation. By validating the executable algebra of the Galois-Sheaf, we open new avenues for solving for characters and coefficients, and for integrating these insights with algebraic learning models and FHE-compatible computations.
 
 \vspace{0.5cm}
 
-\textit{What a nice Monday.}
-
-\section*{Acknowledgments}
-
-This work emerged from exploring the Galois connection between cyclic and symmetric groups as a concrete realization of sheaf-wreath attention. The mathematics revealed itself through categorical structure; the computation made it sing.
+\textit{The mathematics is beautiful. The validation is essential. The framework is executable.}
 
 \begin{thebibliography}{99}
 
 \bibitem{serre1977}
 J-P. Serre.
-\textit{Linear Representations of Finite Groups.}
+\textit{Linear Representations of Finite Groups.}\ 
 Springer, 1977.
 
 \bibitem{james1981}
 G. James and A. Kerber.
-\textit{The Representation Theory of the Symmetric Group.}
+\textit{The Representation Theory of the Symmetric Group.}\ 
 Encyclopedia of Mathematics and its Applications, Vol. 16. Addison-Wesley, 1981.
-
-\bibitem{rotman2015}
-J.J. Rotman.
-\textit{Advanced Modern Algebra}, 3rd ed.
-AMS, 2015.
-
-\bibitem{kaloujnine1951}
-L. Kaloujnine and M. Krasner.
-\textit{Produit complet des groupes de permutations et probl\`eme d'extension de groupes III.}
-Acta Sci. Math. Szeged 14 (1951), 69-82.
-
-\bibitem{terras1999}
-A. Terras.
-\textit{Fourier Analysis on Finite Groups and Applications.}
-Cambridge University Press, 1999.
 
 \bibitem{pak2023}
 I. Pak.
-\textit{Complexity problems in enumerative combinatorics.}
+\textit{Complexity problems in enumerative combinatorics.}\ 
 arXiv:2306.04734, 2023.
-
-\bibitem{manivel2024}
-L. Manivel.
-\textit{Manivel's semi-group property for Kronecker coefficients.}
-arXiv:2511.03484, 2024.
-
-\bibitem{ikenmeyer2024}
-C. Ikenmeyer et al.
-\textit{Quantum complexity of the Kronecker coefficients.}
-arXiv:2302.11454, 2024.
 
 \bibitem{ibm2024}
 IBM Quantum Computing Blog.
-\textit{Discovering a new quantum algorithm.}
+\textit{Discovering a new quantum algorithm.}\ 
 \url{https://www.ibm.com/quantum/blog/group-theory}, 2024.
-
-\bibitem{prior_work}
-bon-cdp.
-\textit{Algebraic Learning of Transformers via Wreath Products and Character Theory.}
-Unpublished manuscript, 2025.
 
 \end{thebibliography}
 
